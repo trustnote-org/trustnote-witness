@@ -9,7 +9,7 @@ exports.bLight = false;
 exports.storage = 'sqlite';
 
 
-exports.hub = 'trustgraph.org/bb';
+exports.hub = 'trustgraph.org/tg';
 exports.deviceName = 'Witness';
 exports.permanent_pairing_secret = 'randomstring';
 exports.control_addresses = ['DEVICE ALLOWED TO CHAT'];

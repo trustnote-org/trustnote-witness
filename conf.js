@@ -9,14 +9,14 @@ exports.bLight = false;
 exports.storage = 'sqlite';
 
 
-exports.hub = 'trustgraph.org/tg';
+exports.hub = '172.16.0.6/tg';
 exports.deviceName = 'Witness';
 exports.permanent_pairing_secret = 'randomstring';
 exports.control_addresses = ['DEVICE ALLOWED TO CHAT'];
 exports.payout_address = 'WHERE THE MONEY CAN BE SENT TO';
 
 exports.bSingleAddress = true;
-exports.THRESHOLD_DISTANCE = 50;
+exports.THRESHOLD_DISTANCE = 20; //zhangtao modi 50->20
 exports.MIN_AVAILABLE_WITNESSINGS = 100;
 
 exports.KEYS_FILENAME = 'keys.json';

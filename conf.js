@@ -9,7 +9,7 @@ exports.bLight = false;
 exports.storage = 'sqlite';
 
 
-exports.hub = '123.206.95.213/tg';
+exports.hub = '211.159.160.220/tn';
 exports.deviceName = 'Witness';
 exports.permanent_pairing_secret = 'randomstring';
 exports.control_addresses = ['DEVICE ALLOWED TO CHAT'];

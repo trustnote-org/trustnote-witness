@@ -1,13 +1,13 @@
 /*jslint node: true */
 "use strict";
-var conf = require('trustgraph-common/conf.js');
-var db = require('trustgraph-common/db.js');
-var storage = require('trustgraph-common/storage.js');
-var eventBus = require('trustgraph-common/event_bus.js');
-var mail = require('trustgraph-common/mail.js');
-var headlessWallet = require('trustgraph-headless');
-var desktopApp = require('trustgraph-common/desktop_app.js');
-var objectHash = require('trustgraph-common/object_hash.js');
+var conf = require('trustnote-common/conf.js');
+var db = require('trustnote-common/db.js');
+var storage = require('trustnote-common/storage.js');
+var eventBus = require('trustnote-common/event_bus.js');
+var mail = require('trustnote-common/mail.js');
+var headlessWallet = require('trustnote-headless');
+var desktopApp = require('trustnote-common/desktop_app.js');
+var objectHash = require('trustnote-common/object_hash.js');
 
 var WITNESSING_COST = 600; // size of typical witnessing unit
 var my_address;
@@ -45,8 +45,8 @@ function witness(onDone){
 		notifyAdminAboutFailedWitnessing(err);
 		setTimeout(onDone, 60000); // pause after error
 	}
-	var network = require('trustgraph-common/network.js');
-	var composer = require('trustgraph-common/composer.js');
+	var network = require('trustnote-common/network.js');
+	var composer = require('trustnote-common/composer.js');
 	if (!network.isConnected()){
 		console.log('not connected, skipping');
 		return onDone();

@@ -1,27 +1,27 @@
 {
-  "name": "trustgraph-witness",
-  "description": "Trustgraph witness",
-  "author": "Trustgraph",
+  "name": "trustnote-witness",
+  "description": "Trustnote witness",
+  "author": "Trustnote",
   "version": "0.1.7",
   "main": "start.js",
   "keywords": [
     "witness",
-    "trustgraph"
+    "trustnote"
   ],
   "license": "MIT",
   "repository": {
-    "url": "https://gitee.com/trustgraph/trustgraph-witness.git",
+    "url": "https://gitee.com/trustnote/trustnote-witness.git",
     "type": "git"
   },
   "bugs": {
-    "url": "https://gitee.com/trustgraph/trustgraph-witness/issues"
+    "url": "https://gitee.com/trustnote/trustnote-witness/issues"
   },
   "browser": {
     "request": "browser-request",
     "secp256k1": "secp256k1/js"
   },
   "dependencies": {
-    "trustgraph-common": "git+ssh://git@gitee.com:trustgraph/trustgraph-common.git",
-    "trustgraph-headless": "git+ssh://git@gitee.com:trustgraph/trustgraph-headless.git"
+    "trustnote-common": "git+ssh://git@gitee.com:trustnote/trustnote-common.git",
+    "trustnote-headless": "git+ssh://git@gitee.com:trustnote/trustnote-headless.git"
   }
 }

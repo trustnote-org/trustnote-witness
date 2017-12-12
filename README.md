@@ -1,2 +1,2 @@
-# trustgraph-witness
-Witness for trustgraph network
+# trustnote-witness
+Witness for trustnote network

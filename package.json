@@ -2,7 +2,7 @@
   "name": "trustnote-witness",
   "description": "Trustnote witness",
   "author": "Trustnote",
-  "version": "0.1.7",
+  "version": "0.1.0",
   "main": "start.js",
   "keywords": [
     "witness",

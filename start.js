@@ -103,11 +103,14 @@ function checkAndWitness(){
 					console.log("distance="+distance);
 					if (distance > conf.THRESHOLD_DISTANCE){
 						console.log('distance above threshold, will witness');
-						setTimeout(function(){
-							witness(function(){
-								bWitnessingUnderWay = false;
-							});
-						}, Math.round(Math.random()*3000));
+						//modi winess payment victor
+						//setTimeout(function(){
+						//	witness(function(){
+						//		bWitnessingUnderWay = false;
+						//	});
+						//}, Math.round(Math.random()*3000));
+						bWitnessingUnderWay = false;
+						checkForUnconfirmedUnits(conf.THRESHOLD_DISTANCE/distance);
 					}
 					else{
 						bWitnessingUnderWay = false;

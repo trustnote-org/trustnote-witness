@@ -1,2 +1,2 @@
 # trustnote-witness
-Witness for trustnote network
+Witness for TrustNote network

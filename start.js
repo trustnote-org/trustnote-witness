@@ -8,6 +8,14 @@ var mail = require('trustnote-common/mail.js');
 var headlessWallet = require('trustnote-headless');
 var desktopApp = require('trustnote-common/desktop_app.js');
 var objectHash = require('trustnote-common/object_hash.js');
+var constants = require('trustnote-common/constants.js');
+var async = require('async');
+
+var composer = require('trustnote-common/composer.js');
+var network = require('trustnote-common/network.js');
+var equihash = require('./equihash.js');
+var trustme = require('./trustme.js');
+
 
 var WITNESSING_COST = 600; // size of typical witnessing unit
 var my_address;
@@ -19,6 +27,112 @@ if (!conf.bSingleAddress)
 	throw Error('witness must be single address');
 
 headlessWallet.setupChatEventHandlers();
+
+function initRPC() {
+	var rpc = require('json-rpc2');
+
+	var server = rpc.Server.$create({
+		'websocket': true, // is true by default 
+		'headers': { // allow custom headers is empty by default 
+			'Access-Control-Allow-Origin': '*'
+		}
+	});
+
+	/**
+	 * Send funds to address.
+	 * If address is invalid, then returns "invalid address".
+	 * @param {String} address
+	 * @param {Integer} amount
+	 * @return {String} status
+	 */
+	server.expose('sendtoaddress', function(args, opt, cb) {
+		var amount = args[1];
+		var toAddress = args[0];
+		if (amount && toAddress) {
+			if (validationUtils.isValidAddress(toAddress))
+				headlessWallet.issueChangeAddressAndSendPayment(null, amount, toAddress, null, function(err, unit) {
+					cb(err, err ? undefined : unit);
+				});
+			else
+				cb("invalid address");
+		}
+		else
+			cb("wrong parameters");
+	});
+
+	/**
+	 * Send blackbytes to address.
+	 * If address is invalid, then returns "invalid address".
+	 * @param {String} device
+	 * @param {String} address
+	 * @param {Integer} amount
+	 * @return {String} status
+	 */
+	server.expose('sendblackbytestoaddress', function(args, opt, cb) {
+		if (args.length != 3) {
+			return cb("wrong parameters");
+		}
+
+		let device = args[0];
+		let toAddress = args[1];
+		let amount = args[2];
+
+		if (!validationUtils.isValidDeviceAddress(device)) {
+			return cb("invalid device address");
+		}
+
+		if (!validationUtils.isValidAddress(toAddress)) {
+			return cb("invalid address");
+		}
+
+		headlessWallet.readSingleAddress(function(fromAddress) {
+			createIndivisibleAssetPayment(constants.BLACKBYTES_ASSET, amount, fromAddress, toAddress, device, function(err, unit) {
+				cb(err, err ? undefined : unit);
+			});
+		});
+	});
+
+	server.expose('getbalance', function(args, opt, cb) {
+		let start_time = Date.now();
+		var address = args[0];
+		var asset = args[1];
+		if (address) {
+			if (validationUtils.isValidAddress(address))
+				db.query("SELECT COUNT(*) AS count FROM my_addresses WHERE address = ?", [address], function(rows) {
+					if (rows[0].count)
+						db.query(
+							"SELECT asset, is_stable, SUM(amount) AS balance \n\
+							FROM outputs JOIN units USING(unit) \n\
+							WHERE is_spent=0 AND address=? AND sequence='good' AND asset "+(asset ? "="+db.escape(asset) : "IS NULL")+" \n\
+							GROUP BY is_stable", [address],
+							function(rows) {
+								var balance = {};
+								balance[asset || 'base'] = {
+									stable: 0,
+									pending: 0
+								};
+								for (var i = 0; i < rows.length; i++) {
+									var row = rows[i];
+									balance[asset || 'base'][row.is_stable ? 'stable' : 'pending'] = row.balance;
+								}
+								cb(null, balance);
+							}
+						);
+					else
+						cb("address not found");
+				});
+			else
+				cb("invalid address");
+		}
+		else
+			Wallet.readBalance(wallet_id, function(balances) {
+				console.log('getbalance took '+(Date.now()-start_time)+'ms');
+				cb(null, balances);
+			});
+	});
+	server.listen(conf.rpcPort, conf.rpcInterface);
+}
+
 
 function notifyAdmin(subject, body){
 	mail.sendmail({
@@ -252,13 +366,136 @@ db.query("CREATE UNIQUE INDEX IF NOT EXISTS hcobyAddressSpentMci ON headers_comm
 db.query("CREATE UNIQUE INDEX IF NOT EXISTS byWitnessAddressSpentMci ON witnessing_outputs(address, is_spent, main_chain_index)");
 
 eventBus.on('headless_wallet_ready', function(){
-	if (!conf.admin_email || !conf.from_email){
-		console.log("please specify admin_email and from_email in your "+desktopApp.getAppDataDir()+'/conf.json');
-		process.exit(1);
-	}
+	// if (!conf.admin_email || !conf.from_email){
+	// 	console.log("please specify admin_email and from_email in your "+desktopApp.getAppDataDir()+'/conf.json');
+	// 	process.exit(1);
+	// }
+	console.log("headless_wallet_ready triggered");
 	headlessWallet.readSingleAddress(function(address){
 		my_address = address;
+		restoreRound();
 		//checkAndWitness();
-		eventBus.on('new_joint', checkAndWitness); // new_joint event is not sent while we are catching up
+		// eventBus.on('new_joint', checkAndWitness); // new_joint event is not sent while we are catching up
+		eventBus.on('mci_became_stable', updateSuperGrp);
 	});
 });
+
+function insertAttestor( mci) {
+	for (var i = 0; i < global.curSuperGrp.length; i++) {
+		db.query("insert into attestor values(?,?,?)", [global.curRnd, global.curSuperGrp[i], mci]);
+	}
+}
+
+function updateSuperGrp(mci) {
+	console.info("mainchain advance to", mci);
+
+	db.query("select rnd_num,address from units join equihash using(unit) where main_chain_index=? order by units.level,units.unit limit ?", [mci, constants.COUNT_WITNESSES], function (rows) {
+		if (rows.length === 0)
+			return;
+		async.eachSeries(rows,
+			function (row, cb) {
+				if (row.rnd_num > global.nxtRnd) {
+					insertAttestor( mci);
+					global.curRnd = row.rnd_num - 1;
+					global.nxtRnd = row.rnd_num;
+					global.nxtSuperGrp = [];
+					global.curSuperGrp = [];
+					global.nxtSuperGrp.push(row.address);
+				} else if (row.rnd_num === global.nxtRnd) {
+					if (global.nxtSuperGrp.indexOf(row.address) < 0) {
+						global.nxtSuperGrp.push(row.address);
+						if (global.nxtSuperGrp.length === constants.COUNT_WITNESSES) {
+								if (conf.bServeAsSuperNode) {
+									if (global.trustme_interval) {
+										clearInterval(global.trustme_interval);
+										console.info("stop trustme of round", global.curRnd);
+									}
+									equihash.startEquihash(my_address, global.nxtRnd + 1,headlessWallet.signer);
+									if (global.nxtSuperGrp.indexOf(my_address) > -1) {
+										global.trustme_interval = setInterval(trustme.postTrustme, 3000, global.nxtRnd,my_address,headlessWallet.signer);
+									}
+								}
+								console.info("round change from %d to %d", global.curRnd, global.nxtRnd);
+								insertAttestor(mci);
+								global.curSuperGrp = global.nxtSuperGrp;
+								global.nxtSuperGrp = [];
+								global.curRnd = global.nxtRnd++;
+						}
+					}
+				}
+				cb();
+			},
+			function (err) {
+				if (err)
+					console.log(err);
+			}
+		);
+	});
+}
+
+
+function restoreRound(){
+	console.log("restoreRound triggerd");
+	db.query("select max(rnd_num) as rnd_num,mci from attestor",function(rows){
+		console.log("existed attestor",rows[0]);
+		if(rows[0].rnd_num){
+			global.curRnd=rows[0].rnd_num+1;
+			global.nxtRnd=rows[0].rnd_num+2;
+			db.query("select equihash.address from units join equihash using(unit) where is_stable=1 and main_chain_index>? order by main_chain_index asc,level desc,unit asc",rows[0].mci,function(rowss){
+				if(rowss.length==0)
+					return;
+				for(var i=0;i<rowss.length;i++)
+					global.curSuperGrp.push(rowss[i].address);
+
+			});
+		}
+		if (conf.bServeAsSuperNode&&global.curRnd==0) {
+			eventBus.on('new_joint',initial);
+		}
+	});
+}
+
+
+function initial(objJoint){
+	if(storage.isGenesisUnit(objJoint.unit.unit)){
+		eventBus.removeListener('new_joint',initial);
+		postEquihash();
+		global.trustme_interval = setInterval(postTrustme, 3000);
+	}
+}
+
+function postTrustme() {
+    
+    var callbacks = composer.getSavingCallbacks({
+        ifNotEnoughFunds: function(err) {
+            console.error(err);
+        },
+        ifError: function(err) {
+            console.error(err);
+        },
+        ifOk: function(objJoint) {
+			console.info("send a trustme msg");
+			network.broadcastJoint(objJoint);
+        }
+    });
+
+    composer.composeTrustmeJoint(my_address, 1,'sakdfgjojeoitg3j9i4ojtiwjrgloko3', headlessWallet.signer, callbacks);
+}
+
+function postEquihash() {
+   
+    var callbacks = composer.getSavingCallbacks({
+        ifNotEnoughFunds: function(err) {
+            console.error(err);
+        },
+        ifError: function(err) {
+            console.error(err);
+        },
+        ifOk: function(objJoint) {
+			console.info("send a equihash msg");
+            network.broadcastJoint(objJoint);
+        }
+    });
+
+    composer.composeEquihashJoint(my_address,1,'i m seed',1,'sakdfgjojeoitg3j9i4ojtiwjrgloko3', headlessWallet.signer, callbacks);
+}

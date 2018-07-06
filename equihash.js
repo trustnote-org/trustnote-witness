@@ -11,8 +11,9 @@ function onError(err){
 
 function startEquihash(address,nxtRndNum,signer){
     console.info("start equihash for",nxtRndNum);
-    global.solution=genSolution(address);
-    composer.composeEquihashJoint(address,nxtRndNum,"I'm seed",100,global.solution,signer,composer.getSavingCallbacks({
+    var seed=address+global.solution;
+    global.solution=genSolution(seed);
+    composer.composeEquihashJoint(address,nxtRndNum,seed,100,global.solution,signer,composer.getSavingCallbacks({
         ifNotEnoughFunds: onError,
         ifError: onError,
         ifOk: function(objJoint){

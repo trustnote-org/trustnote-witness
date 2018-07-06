@@ -1,7 +1,7 @@
 /*jslint node: true */
 "use strict";
 
-exports.port = null;
+exports.port = 6616;
 //exports.myUrl = 'wss://mydomain.com/bb';
 exports.bServeAsHub = false;
 exports.bServeAsSuperNode=true;
@@ -11,7 +11,7 @@ exports.storage = 'sqlite';
 exports.admin_email='witness';
 exports.from_email='witness';
 exports.WS_PROTOCOL = 'ws://';
-exports.hub = '127.0.0.1:6616';
+exports.hub = 'h1:6616';
 exports.deviceName = 'Witness';
 exports.permanent_pairing_secret = 'randomstring';
 exports.control_addresses = ['DEVICE ALLOWED TO CHAT'];

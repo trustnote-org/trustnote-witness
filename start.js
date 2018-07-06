@@ -28,110 +28,6 @@ if (!conf.bSingleAddress)
 
 headlessWallet.setupChatEventHandlers();
 
-function initRPC() {
-	var rpc = require('json-rpc2');
-
-	var server = rpc.Server.$create({
-		'websocket': true, // is true by default 
-		'headers': { // allow custom headers is empty by default 
-			'Access-Control-Allow-Origin': '*'
-		}
-	});
-
-	/**
-	 * Send funds to address.
-	 * If address is invalid, then returns "invalid address".
-	 * @param {String} address
-	 * @param {Integer} amount
-	 * @return {String} status
-	 */
-	server.expose('sendtoaddress', function(args, opt, cb) {
-		var amount = args[1];
-		var toAddress = args[0];
-		if (amount && toAddress) {
-			if (validationUtils.isValidAddress(toAddress))
-				headlessWallet.issueChangeAddressAndSendPayment(null, amount, toAddress, null, function(err, unit) {
-					cb(err, err ? undefined : unit);
-				});
-			else
-				cb("invalid address");
-		}
-		else
-			cb("wrong parameters");
-	});
-
-	/**
-	 * Send blackbytes to address.
-	 * If address is invalid, then returns "invalid address".
-	 * @param {String} device
-	 * @param {String} address
-	 * @param {Integer} amount
-	 * @return {String} status
-	 */
-	server.expose('sendblackbytestoaddress', function(args, opt, cb) {
-		if (args.length != 3) {
-			return cb("wrong parameters");
-		}
-
-		let device = args[0];
-		let toAddress = args[1];
-		let amount = args[2];
-
-		if (!validationUtils.isValidDeviceAddress(device)) {
-			return cb("invalid device address");
-		}
-
-		if (!validationUtils.isValidAddress(toAddress)) {
-			return cb("invalid address");
-		}
-
-		headlessWallet.readSingleAddress(function(fromAddress) {
-			createIndivisibleAssetPayment(constants.BLACKBYTES_ASSET, amount, fromAddress, toAddress, device, function(err, unit) {
-				cb(err, err ? undefined : unit);
-			});
-		});
-	});
-
-	server.expose('getbalance', function(args, opt, cb) {
-		let start_time = Date.now();
-		var address = args[0];
-		var asset = args[1];
-		if (address) {
-			if (validationUtils.isValidAddress(address))
-				db.query("SELECT COUNT(*) AS count FROM my_addresses WHERE address = ?", [address], function(rows) {
-					if (rows[0].count)
-						db.query(
-							"SELECT asset, is_stable, SUM(amount) AS balance \n\
-							FROM outputs JOIN units USING(unit) \n\
-							WHERE is_spent=0 AND address=? AND sequence='good' AND asset "+(asset ? "="+db.escape(asset) : "IS NULL")+" \n\
-							GROUP BY is_stable", [address],
-							function(rows) {
-								var balance = {};
-								balance[asset || 'base'] = {
-									stable: 0,
-									pending: 0
-								};
-								for (var i = 0; i < rows.length; i++) {
-									var row = rows[i];
-									balance[asset || 'base'][row.is_stable ? 'stable' : 'pending'] = row.balance;
-								}
-								cb(null, balance);
-							}
-						);
-					else
-						cb("address not found");
-				});
-			else
-				cb("invalid address");
-		}
-		else
-			Wallet.readBalance(wallet_id, function(balances) {
-				console.log('getbalance took '+(Date.now()-start_time)+'ms');
-				cb(null, balances);
-			});
-	});
-	server.listen(conf.rpcPort, conf.rpcInterface);
-}
 
 
 function notifyAdmin(subject, body){
@@ -386,6 +282,10 @@ function insertAttestor( mci) {
 	}
 }
 
+function getRandomInt(min, max) {
+	return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 function updateSuperGrp(mci) {
 	console.info("mainchain advance to", mci);
 
@@ -410,9 +310,10 @@ function updateSuperGrp(mci) {
 										clearInterval(global.trustme_interval);
 										console.info("stop trustme of round", global.curRnd);
 									}
-									equihash.startEquihash(my_address, global.nxtRnd + 1,headlessWallet.signer);
+									setTimeout(equihash.startEquihash,getRandomInt(100,3000),my_address, global.nxtRnd + 1,headlessWallet.signer);
+									// equihash.startEquihash(my_address, global.nxtRnd + 1,headlessWallet.signer);
 									if (global.nxtSuperGrp.indexOf(my_address) > -1) {
-										global.trustme_interval = setInterval(trustme.postTrustme, 3000, global.nxtRnd,my_address,headlessWallet.signer);
+										global.trustme_interval = setInterval(trustme.postTrustme, getRandomInt(5000,10000), global.nxtRnd,my_address,headlessWallet.signer);
 									}
 								}
 								console.info("round change from %d to %d", global.curRnd, global.nxtRnd);
@@ -459,43 +360,7 @@ function restoreRound(){
 function initial(objJoint){
 	if(storage.isGenesisUnit(objJoint.unit.unit)){
 		eventBus.removeListener('new_joint',initial);
-		postEquihash();
-		global.trustme_interval = setInterval(postTrustme, 3000);
+		equihash.startEquihash(my_address,1,headlessWallet.signer);
+		global.trustme_interval = setInterval(trustme.postTrustme, getRandomInt(2000,4000),0,my_address,headlessWallet.signer);
 	}
-}
-
-function postTrustme() {
-    
-    var callbacks = composer.getSavingCallbacks({
-        ifNotEnoughFunds: function(err) {
-            console.error(err);
-        },
-        ifError: function(err) {
-            console.error(err);
-        },
-        ifOk: function(objJoint) {
-			console.info("send a trustme msg");
-			network.broadcastJoint(objJoint);
-        }
-    });
-
-    composer.composeTrustmeJoint(my_address, 1,'sakdfgjojeoitg3j9i4ojtiwjrgloko3', headlessWallet.signer, callbacks);
-}
-
-function postEquihash() {
-   
-    var callbacks = composer.getSavingCallbacks({
-        ifNotEnoughFunds: function(err) {
-            console.error(err);
-        },
-        ifError: function(err) {
-            console.error(err);
-        },
-        ifOk: function(objJoint) {
-			console.info("send a equihash msg");
-            network.broadcastJoint(objJoint);
-        }
-    });
-
-    composer.composeEquihashJoint(my_address,1,'i m seed',1,'sakdfgjojeoitg3j9i4ojtiwjrgloko3', headlessWallet.signer, callbacks);
 }

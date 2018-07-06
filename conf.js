@@ -23,4 +23,12 @@ exports.MIN_AVAILABLE_WITNESSINGS = 100;
 
 exports.KEYS_FILENAME = 'keys.json';
 
+
+exports.deposite_amount=50000;
+
+exports.lock_time=17280;
+
+//exports.payout_addr=null;
+//exports.reward_addr=null;
+
 console.log('finished witness conf');

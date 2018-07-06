@@ -16,6 +16,8 @@ var network = require('trustnote-common/network.js');
 var equihash = require('./equihash.js');
 var trustme = require('./trustme.js');
 
+var util = require('trustnote-common/util.js');
+
 
 var WITNESSING_COST = 600; // size of typical witnessing unit
 var my_address;
@@ -24,7 +26,7 @@ var forcedWitnessingTimer;
 var count_witnessings_available = 0;
 
 if (!conf.bSingleAddress)
-	throw Error('witness must be single address');
+	throw Error('supernode must be single address');
 
 headlessWallet.setupChatEventHandlers();
 
@@ -272,66 +274,39 @@ eventBus.on('headless_wallet_ready', function(){
 		restoreRound();
 		//checkAndWitness();
 		// eventBus.on('new_joint', checkAndWitness); // new_joint event is not sent while we are catching up
-		eventBus.on('mci_became_stable', updateSuperGrp);
+		eventBus.on('round_change',rndChangeAction);
 	});
 });
 
-function insertAttestor( mci) {
-	for (var i = 0; i < global.curSuperGrp.length; i++) {
-		db.query("insert into attestor values(?,?,?)", [global.curRnd, global.curSuperGrp[i], mci]);
+function rndChangeAction(curRnd,nxtRnd,bInCurSuperGrp,bInNxtSuperGrp) {
+	console.error("params are:",curRnd,nxtRnd,bInCurSuperGrp,bInNxtSuperGrp);
+	if (global.trustme_interval) {
+		clearInterval(global.trustme_interval);
+		console.info("stop trustme of round", curRnd);
 	}
-}
-
-function getRandomInt(min, max) {
-	return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function updateSuperGrp(mci) {
-	console.info("mainchain advance to", mci);
-
-	db.query("select rnd_num,address from units join equihash using(unit) where main_chain_index=? order by units.level,units.unit limit ?", [mci, constants.COUNT_WITNESSES], function (rows) {
-		if (rows.length === 0)
-			return;
-		async.eachSeries(rows,
-			function (row, cb) {
-				if (row.rnd_num > global.nxtRnd) {
-					insertAttestor( mci);
-					global.curRnd = row.rnd_num - 1;
-					global.nxtRnd = row.rnd_num;
-					global.nxtSuperGrp = [];
-					global.curSuperGrp = [];
-					global.nxtSuperGrp.push(row.address);
-				} else if (row.rnd_num === global.nxtRnd) {
-					if (global.nxtSuperGrp.indexOf(row.address) < 0) {
-						global.nxtSuperGrp.push(row.address);
-						if (global.nxtSuperGrp.length === constants.COUNT_WITNESSES) {
-								if (conf.bServeAsSuperNode) {
-									if (global.trustme_interval) {
-										clearInterval(global.trustme_interval);
-										console.info("stop trustme of round", global.curRnd);
-									}
-									setTimeout(equihash.startEquihash,getRandomInt(100,3000),my_address, global.nxtRnd + 1,headlessWallet.signer);
-									// equihash.startEquihash(my_address, global.nxtRnd + 1,headlessWallet.signer);
-									if (global.nxtSuperGrp.indexOf(my_address) > -1) {
-										global.trustme_interval = setInterval(trustme.postTrustme, getRandomInt(5000,10000), global.nxtRnd,my_address,headlessWallet.signer);
-									}
-								}
-								console.info("round change from %d to %d", global.curRnd, global.nxtRnd);
-								insertAttestor(mci);
-								global.curSuperGrp = global.nxtSuperGrp;
-								global.nxtSuperGrp = [];
-								global.curRnd = global.nxtRnd++;
-						}
-					}
-				}
-				cb();
+	setTimeout(equihash.startEquihash,util.getRandomInt(300,1000),my_address, nxtRnd + 1,headlessWallet.signer);
+	// equihash.startEquihash(my_address, global.nxtRnd + 1,headlessWallet.signer);
+	if (bInNxtSuperGrp) {
+		global.trustme_interval = setInterval(trustme.postTrustme, util.getRandomInt(2000,5000), nxtRnd,my_address,headlessWallet.signer);
+	}
+	if(bInCurSuperGrp){
+		var callbacks = composer.getSavingCallbacks({
+			ifNotEnoughFunds: function (err) {
+				console.error(err);
 			},
-			function (err) {
-				if (err)
-					console.log(err);
+			ifError: function (err) {
+				console.error(err);
+			},
+			ifOk: function (objJoint) {
+				network.broadcastJoint(objJoint);
 			}
-		);
-	});
+		});
+		var arrOutputs = [
+			{address: my_address, amount: 0 } 
+		];
+		arrOutputs.push({address: my_address, amount: 1000});
+		composer.composeCoinbase([my_address],arrOutputs,headlessWallet.signer,callbacks);
+	}
 }
 
 
@@ -356,11 +331,28 @@ function restoreRound(){
 	});
 }
 
+function sendDeposit(){
+    let callbacks = composer.getSavingCallbacks({
+        ifNotEnoughFunds: function (err) {
+            console.error(err);
+        },
+        ifError: function (err) {
+            console.error(err);
+        },
+        ifOk: function (objJoint) {
+            network.broadcastJoint(objJoint);
+            console.log("send deposit successfully");
+        }
+    });
+    composer.composeDepositJoint(my_address,conf.lock_time,conf.payout_addr?conf.payout_addr:my_address,conf.reward_addr?conf.reward_addr:my_address,headlessWallet.signer,callbacks);
+}
+
 
 function initial(objJoint){
 	if(storage.isGenesisUnit(objJoint.unit.unit)){
 		eventBus.removeListener('new_joint',initial);
 		equihash.startEquihash(my_address,1,headlessWallet.signer);
-		global.trustme_interval = setInterval(trustme.postTrustme, getRandomInt(2000,4000),0,my_address,headlessWallet.signer);
+		sendDeposit();
+		global.trustme_interval = setInterval(trustme.postTrustme, util.getRandomInt(2000,4000),0,my_address,headlessWallet.signer);
 	}
 }
